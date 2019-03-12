@@ -1,177 +1,134 @@
-﻿using MahApps.Metro.Controls;
+﻿using DiscordRPC;
+using MahApps.Metro.Controls;
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
-using System.Net;
 using System.Timers;
 using System.Windows;
-using IniParser;
-using System.IO;
-using IniParser.Model;
+using System.Windows.Controls;
 
-namespace RPC_Link {
+namespace RPC_Link
+{
 
-  public partial class MainWindow : MetroWindow {
+    public partial class MainWindow : MetroWindow
+    {
+        const string ApplicationID = "381938792329904129";
 
-    const string sDefaultKodiAddr = "localhost";
-    const string sDefaultKodiPort = "8080";
+        readonly Timer tUpdate;
 
-    public MainWindow() {
-      InitializeComponent();
-      mwMainWindow.Title += " v" + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Major.ToString() + 
-        "." + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Minor.ToString();
-      Init_Settings();
-    }
-
-    protected override void OnStateChanged(EventArgs e) {
-      if (WindowState == WindowState.Minimized)
-        this.Hide();
-      base.OnStateChanged(e);
-    }
-
-    private void Init_Settings() {
-      FileIniDataParser iniParser = new FileIniDataParser();
-      IniData iniData = new IniData();
-
-      Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPC-Link"));
-
-      try {
-        iniData = iniParser.ReadFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPC-Link", "settings.ini"));
-
-        tbKodiAddr.Text = iniData["Settings"]["tbKodiAddr"];
-        tbKodiPort.Text = iniData["Settings"]["tbKodiPort"];
-      }
-      catch (Exception ex) {
-        // new file...
-        tbKodiAddr.Text = sDefaultKodiAddr;
-        tbKodiPort.Text = sDefaultKodiPort;
-
-        iniData["Settings"]["tbKodiAddr"] = tbKodiAddr.Text;
-        iniData["Settings"]["tbKodiPort"] = tbKodiPort.Text;
-
-        iniParser.WriteFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPC-Link", "settings.ini"), iniData);
-      }
-    }
-
-    // Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPC-Link", "settings.ini")
-    private void Save_Settings(object sender, RoutedEventArgs e) {
-      FileIniDataParser iniParser = new FileIniDataParser();
-      IniData iniData = new IniData();
-
-      try {
-        iniData = iniParser.ReadFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPC-Link", "settings.ini"));
-      }
-      catch (Exception ex) {
-        // new file...
-      }
-
-      iniData["Settings"]["tbKodiAddr"] = tbKodiAddr.Text;
-      iniData["Settings"]["tbKodiPort"] = tbKodiPort.Text;
-
-      iniParser.WriteFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RPC-Link", "settings.ini"), iniData);
-    }
-
-    private void Show_Window(object sender, RoutedEventArgs e) {
-      this.Show();
-      this.Activate();
-    }
-  }
-
-  public partial class App : Application {
-
-    static string KodiAddr = "localhost";
-    static string KodiPort = "8080";
-
-    private static string APPLICATION_ID = "381938792329904129";
-    private static string TEST_URL = @"http://" + KodiAddr + ":" + KodiPort  + "/jsonrpc?request={%22jsonrpc%22:%20%222.0%22,%20%22method%22:%20%22Player.GetItem%22,%20%22params%22:%20{%20%22properties%22:%20[%22title%22,%20%22album%22,%20%22artist%22,%20%22season%22,%20%22episode%22,%20%22duration%22,%20%22showtitle%22,%20%22tvshowid%22,%20%22thumbnail%22,%20%22file%22,%20%22fanart%22,%20%22streamdetails%22],%20%22playerid%22:%201%20},%20%22id%22:%20%22VideoGetItem%22}";
+        public DiskodiViewModel ViewModel { get; } = new DiskodiViewModel();
+        public DiscordRpcClient DiscordRpcClient { get; set; } = new DiscordRpcClient(ApplicationID);
 
 
-    private void Application_Startup(object sender, StartupEventArgs e) {
-      Timer tUpdate = new Timer(10000);
-      tUpdate.Elapsed += HandleTimer;
-      tUpdate.AutoReset = true;
-      tUpdate.Start();
-    }
+        public MainWindow()
+        {
+            DataContext = ViewModel;
 
-    public static bool bEnable = false;
-    public static bool bInitialized = false;
-    DiscordRpc.EventHandlers handlers;
-    DiscordRpc.RichPresence discordPresence;
+            InitializeComponent();
 
-    public static void Discord_RPC_Shutdown() {
-      DiscordRpc.RichPresence discordPresence = new DiscordRpc.RichPresence();
-      discordPresence.details = "";
-      discordPresence.state = "";
-      discordPresence.largeImageKey = "";
+            tUpdate = new Timer(10000);
 
-      DiscordRpc.UpdatePresence(ref discordPresence);
-      DiscordRpc.Shutdown();
-      bEnable = false;
-      bInitialized = false;
-    }
-
-    private void HandleTimer(Object source, ElapsedEventArgs e) {
-      string title = "";
-      string episodeName = "";
-
-      if (Process.GetProcessesByName("kodi").Length > 0) {
-        Debug.WriteLine("Seen Kodi");
-        bEnable = true;
-      }
-      else {
-        if(bEnable) {
-          Debug.WriteLine("Shutting down Discord RPC");
-          Discord_RPC_Shutdown();
-        }
-        bEnable = false;
-      }
-
-      if (bEnable) {
-        if (!bInitialized) {
-          Debug.WriteLine("Starting up Discord RPC");
-          handlers = new DiscordRpc.EventHandlers();
-          discordPresence = new DiscordRpc.RichPresence();
-          DiscordRpc.Initialize(APPLICATION_ID, ref handlers, true, null);
-          bInitialized = true;
+            tUpdate.Elapsed += HandleTimer;
+            tUpdate.AutoReset = true;
+            tUpdate.Start();
         }
 
-        using (WebClient wc = new WebClient()) {
-          try {
-            var json = wc.DownloadString(TEST_URL);
-            dynamic parsed = Newtonsoft.Json.JsonConvert.DeserializeObject(json);
+        protected override void OnStateChanged(EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized)
+                Hide();
 
-            title = parsed.result.item.showtitle;
-            episodeName = parsed.result.item.title;
+            base.OnStateChanged(e);
+        }
 
-            if ((title == "") && (episodeName == "")) {
-              title = "In Menus";
+        void OnPasswordChanged(object sender, RoutedEventArgs e)
+        {
+            ViewModel.Password = ((PasswordBox)sender).SecurePassword;
+        }
+
+        void Save_Settings(object sender, RoutedEventArgs e)
+        {
+            ViewModel.Save();
+        }
+
+        void Show_Window(object sender, RoutedEventArgs e)
+        {
+            Show();
+            Activate();
+        }
+
+
+        bool bEnable;
+        void HandleTimer(Object source, ElapsedEventArgs e)
+        {
+            if (Process.GetProcessesByName("kodi").Length > 0)
+            {
+                Debug.WriteLine("Seen Kodi");
+                bEnable = true;
             }
-          }
-          catch {
-            Debug.WriteLine("Unable to Connect to Remote Server");
-          }
+            else
+            {
+                if (bEnable)
+                {
+                    Debug.WriteLine("Shutting down Discord RPC");
+                    DiscordRpcClient.ClearPresence();
+                    DiscordRpcClient.Invoke();
+                }
+
+                bEnable = false;
+            }
+
+            if (bEnable)
+            {
+                if (!DiscordRpcClient.IsInitialized)
+                {
+                    Debug.WriteLine("Starting up Discord RPC");
+                    DiscordRpcClient.Initialize();
+                }
+
+                var (title, episodeName, current, total) = ViewModel.ResolveStatus();
+
+                Timestamps timestamps;
+
+                if (current == TimeSpan.Zero || total == TimeSpan.Zero)
+                {
+                    timestamps = null;
+                }
+                else
+                {
+                    var start = DateTime.UtcNow.Subtract(current);
+                    var end = start.Add(total);
+                    timestamps = new Timestamps
+                    {
+                        Start = start,
+                        End = end
+                    };
+                }
+
+                var presence = new RichPresence
+                {
+                    Details = title,
+                    State = episodeName,
+                    Assets = new Assets
+                    {
+                        LargeImageKey = "diskodi_logo"
+                    },
+                    Timestamps = timestamps
+                };
+
+                DiscordRpcClient.SetPresence(presence);                
+                DiscordRpcClient.Invoke();
+            }
         }
 
-        discordPresence.details = title;
-        discordPresence.state = episodeName;
-        discordPresence.largeImageKey = "diskodi_logo";
-        DiscordRpc.UpdatePresence(ref discordPresence);
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            DiscordRpcClient.ClearPresence();
+            DiscordRpcClient.Dispose();
 
-      }
+            base.OnClosing(e);
+        }
     }
-
-    private void Application_Exit(object sender, ExitEventArgs e) {
-      Debug.WriteLine("Application_Exit");
-      if (bEnable) {
-        DiscordRpc.RichPresence discordPresence = new DiscordRpc.RichPresence();
-        discordPresence.details = "";
-        discordPresence.state = "";
-        discordPresence.largeImageKey = "";
-
-        DiscordRpc.UpdatePresence(ref discordPresence);
-        DiscordRpc.Shutdown();
-      }
-    }
-  }
 }
 
 
